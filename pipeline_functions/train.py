@@ -44,8 +44,8 @@ def train(model, num_epochs, train_loader, val_loader, criterion, optimizer, dev
 
         # print training status update after the specified number of epochs pass
         if e % update_every == 0:
-            print(f"Epoch {e}: Training Loss: {train_loss}, Training Accuracy: {train_acc}, " + 
-                  f"Validation Loss: {val_loss}, Validation Accuracy: {val_acc}")
+            print(f"Epoch {e}: Training Loss: {train_loss:.4f}, Training Accuracy: {train_acc*100:.2f}%, " + 
+                  f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_acc*100:.2f}%")
     
     return training_history
         
@@ -104,6 +104,21 @@ def train_epoch(model, train_loader, criterion, optimizer, device, batch_first =
     return avg_loss, acc
 
 def validate_snn(model, val_loader, criterion, device, batch_first=False):
+    """
+    evaluates a SNN model on the entire validation set
+    
+    Inputs:
+    - model: the SNN model
+    - val_loader: pytorch dataloader for the validation dataset
+    - criterion: the loss function to be used to calculate loss. Must be from snnTorch and use output
+                 spikes, not membrane voltage
+    - device: the device which the model is in. e.g. cuda, cpu
+    - batch_first: whether the data has the batch as first dimension or time steps as first dimension
+
+    Returns:
+    - avg_loss: total loss across the validation set divided by the number of samples in the val_loader
+    - acc: accuracy of the model on the data in val_loader
+    """
     model.eval()
     total_loss = 0.0
     num_correct = 0
