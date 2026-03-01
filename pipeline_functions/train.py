@@ -3,6 +3,7 @@ from snntorch import functional as SF
 
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, random_split, TensorDataset, WeightedRandomSampler
 
 def train(model, num_epochs, train_loader, val_loader, criterion, optimizer, device, update_every=5, batch_first=False):
     """
@@ -150,3 +151,65 @@ def validate_snn(model, val_loader, criterion, device, batch_first=False):
     avg_loss = total_loss / total
     acc = num_correct / total
     return avg_loss, acc
+
+def prepare_training_data(X, y, batch_size, balanced = True):
+    """
+    transforms numpy arrays for features and labels into dataloaders split for training, validation, and testing
+
+    Inputs:
+    - X: numpy feature array 
+    - y: numpy data label array
+    - batch_size: sample batch size for dataloaders
+    - balanced: whether the training data should be balanced between classes or not. Applies a WeightedRandomSampler 
+                on the training set. Defaults True for a balanced dataset
+
+    Outputs:
+    - train_loader: pytorch dataloader for training dataset
+    - val_loader: pytorch dataloader for validation dataset
+    - test_loader: pytorch dataloader for testing dataset
+    """
+    # change into pytorch tensors
+    X_tensor = torch.from_numpy(X)
+    y_tensor = torch.from_numpy(y)
+
+    # load into a tensor dataset
+    full_dataset = TensorDataset(X_tensor, y_tensor)
+
+    # separate dataset into training, validation, and testing
+    train_ratio = 0.7
+    val_ratio = 0.15
+    test_ratio = 0.15
+
+    total_size = len(full_dataset)
+    train_size = int(train_ratio * total_size)
+    val_size = int(val_ratio * total_size)
+    test_size = total_size - train_size - val_size
+
+    lengths = [train_size, val_size, test_size]
+    print(f"Train size: {train_size}, Val size: {val_size}, Test size: {test_size}")
+
+    train_dataset, val_dataset, test_dataset = random_split(full_dataset, lengths)
+
+    sampler = None
+    if balanced:
+        # creating a sampler out P300 and non-P300 samples for training set so they are closer to 50/50
+        train_labels = torch.tensor([full_dataset[i][1] for i in train_dataset.indices])
+        class_counts = torch.bincount(train_labels)
+        print("Training Class Counts: ", class_counts)
+        # Calculate inverse frequencies
+        class_weights = 1.0 / class_counts
+        print("Training Class Weights:", class_weights)
+        # Assign weight to each sample based on its class
+        sample_weights = class_weights[train_labels]
+
+        sampler = WeightedRandomSampler(
+            sample_weights, 
+            len(sample_weights), 
+            replacement=True # Allows oversampling of minority classes
+        )
+    
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
