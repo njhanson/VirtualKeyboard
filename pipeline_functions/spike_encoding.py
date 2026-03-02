@@ -1,10 +1,20 @@
 import numpy as np
 
 def deterministic_rate(features,T_ms=200,dt_ms=1,r_min=50.0,r_max=150.0):
-    # features: array values between 0-1
-    # T_ms: total time (ms) (adjustable)
-    # dt_ms: time step (ms)
-    # r: min/max firing rates (Hz) 
+    """
+    deterministic rate encoding of a dataset
+
+    Inputs:
+    - features: array values between 0-1
+    - T_ms: total time (ms) (adjustable)
+    - dt_ms: time step (ms)
+    - r_min: min firing rate (Hz) 
+    - r_max: max firing rate (Hz)
+
+    Output:
+    - spikes: spike encoded feature dataset of shape (trials, features, time_steps)
+    - r_Hz: each feature's firing rate (Hz) shape (trials, features)
+    """
 
     x=np.clip(features,0.0,1.0)
     # Make sure all feature values stay between 0 and 1
