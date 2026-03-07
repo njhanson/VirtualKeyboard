@@ -4,9 +4,8 @@
 
 from scipy.io import loadmat
 import numpy as np 
-import eeglib # for feature extraction, install via pip if needed (pip install eeglib)
 
-# Load .mat file -- Michael is adding to GitHub, but adjust filename as needed
+# Load .mat file 
 mat = loadmat("S17_Preprocessed_Epoch.mat")
 
 # Extract datasets
@@ -40,7 +39,7 @@ X_norm = (X - trial_min) / (trial_max - trial_min + eps)
 print("Shape after normalization:", X_norm.shape)
 
 # Feature extraction per trial
-# Example using EEGLib basic features: peak-to-peak, mean, Hjorth parameters
+# Using basic features: peak-to-peak, mean, Hjorth parameters
 feature_list = []
 for trial in X_norm:  # trial: (channels, time)
     trial_features = []
@@ -100,3 +99,5 @@ print("Saved X_norm.npy, X_features.npy, and y.npy")
 #time_mask = (times >= tmin) & (times <= tmax)
 #X_window = X[:, :, time_mask]
 #print("Shape after time window selection:", X_window.shape)
+
+# if this is not fast enough --> import eeglib # for feature extraction, install via pip if needed (pip install eeglib)
