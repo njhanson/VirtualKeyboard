@@ -16,19 +16,14 @@ def create_flash_matrix(tensor):
 
     tensor = [] #3D array based on the input data from SNNval. A 15x2 for each row, col that is repeated.
     
-    for index,rowcol in tensor: #For the 12 flashes
-        is_col = index < 6 #First 6 rows are col flashes, next 6 are row flashes.
-        is_row = not is_col #The remaining 6 rows are row flashes. 7-12.
-        hits = 0
-        for spikeobj in rowcol: #15
-            for specrowcol in spikeobj:#15
-                hits += specrowcol[1] #summing second column of tensor to get total hits for each flash. 
-        if is_col:
-            column_index = index % 6
-            flash_matrix[:, column_index] += hits #summing the hits for each column flash and adding to the corresponding column in the flash matrix.
-        else:
-            row_index = index % 6
-            flash_matrix[row_index, :] += hits #summing the hits for each row flash and adding to the corresponding row in the flash matrix.
+    #Adjusted verison without uses the nested for loops. Can go back if needed. 
+    hits_per_flash = tensor[:, :, :, 1].sum(axis=(1, 2)) #Extract the hit counts for each flash from the tensor for the second column P300.
+
+    for index, hits in enumerate(hits_per_flash): #Keeps track of the index of the flash (0-11) and the number of hits for that flash. The index corresponds to either a row or a column in the 6x6 grid.
+        if index < 6:  # column flashes
+            flash_matrix[:, index] += hits
+        else:          # row flashes
+            flash_matrix[index - 6, :] += hits
     return flash_matrix
 
 #P300 speller cycle character selection function
