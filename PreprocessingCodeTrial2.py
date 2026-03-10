@@ -1,82 +1,87 @@
 import numpy as np
+import scipy.io
 from scipy.signal import butter, filtfilt
-import h5py
+import matplotlib.pyplot as plt
 
-# Open MATLAB file
-file = h5py.File(r'C:\Users\MikeK\Downloads\s17.mat', 'r')
+data = scipy.io.loadmat(r'C:\Users\MikeK\Downloads\s17_v72.mat', squeeze_me=True, struct_as_record=False)
 
-# MATLAB structs are stored as references
-train_ref = file['train'][0][0]
-train = file[train_ref]
+t2 = data['train'][0]
 
-# Now access fields
-markers_target = np.array(train['markers_target']).squeeze()
-raw_data = np.array(train['data'])
-raw_data = raw_data.T
-samplingrate = int(np.array(train['srate']).squeeze())
+# lets us see where target stimulus and where non target stim is
+target_indices = np.where(t2.markers_target == 1)[0]
+nontarget_indices = np.where(t2.markers_target == 2)[0]
 
-# Find target and non-target indices
-target_indices = np.where(markers_target == 1)[0]
-nontarget_indices = np.where(markers_target == 2)[0]
-
-# Define epoch parameters
+# define parameters, sampling rate (512hz) and epoch length (600ms)
+samplingrate = t2.srate
 epoch_length = int(round(0.6 * samplingrate))
 
-# Bandpass filter (0.5–15 Hz)
+# Design bandpass filter (0.5–15 Hz)
 b, a = butter(4, [0.5/(samplingrate/2), 15/(samplingrate/2)], btype='bandpass')
 
-# Example electrode
-pz_index = 13
+# Use raw EEG data
+raw_data = t2.data
 
-# Time vector (ms)
-time = np.arange(epoch_length) / samplingrate * 1000
+# Pick first target stimulus
+firstargetstimulus = target_indices[0]
 
-# Create epoch containers
+# Extract 600 ms window after stimulus
+one_trial = raw_data[:, firstargetstimulus:firstargetstimulus + epoch_length]
+
+pz_index = 12   # MATLAB 13 -> Python index 12
+
+time = np.arange(epoch_length) / samplingrate * 1000  # milliseconds
+
+# lets us create these arrays, channels, samples, and number of trials
 target_epochs = np.zeros((32, epoch_length, len(target_indices)))
 nontarget_epochs = np.zeros((32, epoch_length, len(nontarget_indices)))
 
-# Extract target epochs
-for i, stim in enumerate(target_indices):
-    target_epochs[:, :, i] = raw_data[:, stim:stim + epoch_length]
-
-# Extract non-target epochs
-for i, stim in enumerate(nontarget_indices):
-    nontarget_epochs[:, :, i] = raw_data[:, stim:stim + epoch_length]
-
-# Filter epochs
-filtered_target_epochs = np.zeros_like(target_epochs)
-filtered_nontarget_epochs = np.zeros_like(nontarget_epochs)
-
+# Extract all target trials
 for i in range(len(target_indices)):
-    filtered_target_epochs[:, :, i] = filtfilt(b, a, target_epochs[:, :, i].T).T
+    firstargetstimulus = target_indices[i]
+    target_epochs[:, :, i] = raw_data[:, firstargetstimulus:firstargetstimulus + epoch_length]
 
+# Extract all nontarget trials
 for i in range(len(nontarget_indices)):
-    filtered_nontarget_epochs[:, :, i] = filtfilt(b, a, nontarget_epochs[:, :, i].T).T
+    firstargetstimulus = nontarget_indices[i]
+    nontarget_epochs[:, :, i] = raw_data[:, firstargetstimulus:firstargetstimulus + epoch_length]
+
+filteredepochs = np.zeros_like(target_epochs)
+filterednontargetepochs = np.zeros_like(nontarget_epochs)
+
+# Filter target trials
+for i in range(len(target_indices)):
+    filteredepochs[:, :, i] = filtfilt(b, a, target_epochs[:, :, i], axis=1)
+
+# Filter nontarget trials
+for i in range(len(nontarget_indices)):
+    filterednontargetepochs[:, :, i] = filtfilt(b, a, nontarget_epochs[:, :, i], axis=1)
 
 # Average across trials
-average_target = np.mean(filtered_target_epochs, axis=2)
-average_nontarget = np.mean(filtered_nontarget_epochs, axis=2)
+average_target = np.mean(filteredepochs, axis=2)
+average_nontarget = np.mean(filterednontargetepochs, axis=2)
 
-# Compile dataset
-numberof_target = filtered_target_epochs.shape[2]
-numberof_nontarget = filtered_nontarget_epochs.shape[2]
+time = np.arange(epoch_length) / samplingrate * 1000
 
-labels = np.concatenate((np.ones(numberof_target), np.zeros(numberof_nontarget)))
+# Filter single trial
+one_trial_filtered = filtfilt(b, a, one_trial, axis=1)
 
-all_epochs = np.concatenate((filtered_target_epochs, filtered_nontarget_epochs), axis=2)
+# Plot raw vs filtered
+plt.figure()
 
-# Save dataset as NPZ (Python format)
-np.savez(
-    r'C:\Users\MikeK\Downloads\DatasetMatfiles\S17_Preprocessed_Epoch.npz',
-    filtered_target_epochs=filtered_target_epochs,
-    filtered_nontarget_epochs=filtered_nontarget_epochs,
-    all_epochs=all_epochs,
-    labels=labels,
-    average_target=average_target,
-    average_nontarget=average_nontarget,
-    samplingrate=samplingrate,
-    time=time,
-    pz_index=pz_index
-)
+plt.plot(time, one_trial[pz_index, :], 'k', label='Raw')
+plt.plot(time, one_trial_filtered[pz_index, :], 'r', label='Filtered')
 
-print("Preprocessed EEG dataset saved successfully.")
+plt.legend()
+plt.title('Single Trial - Raw vs Bandpass Filtered - 0.5-15Hz')
+plt.xlabel('Time (ms)')
+plt.ylabel('Amplitude')
+
+plt.show()
+
+# Access flash order
+t24 = data['train'][0]
+
+flash_indices = np.where(t24.markers_seq > 0)[0]
+flash_order = t24.markers_seq[flash_indices]
+
+print(flash_order[:30])
