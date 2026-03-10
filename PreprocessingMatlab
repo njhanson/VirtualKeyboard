@@ -1,0 +1,86 @@
+% Load the .mat file into MATLAB workspace
+data = load('C:\Users\MikeK\Downloads\s17.mat');
+load('C:\Users\MikeK\Downloads\s17.mat')
+
+% This below will help us use it when calling into python
+save('C:\Users\MikeK\Downloads\s17_v72.mat','-v7')
+t2 = data.train{1};
+
+
+% lets us see where target stimulus and where non target stim is
+target_indices = find(t2.markers_target == 1);
+nontarget_indices = find(t2.markers_target == 2);
+
+% define parameters, so sampling rate (512hz) and epoch length (600ms)
+samplingrate = t2.srate;
+epoch_length = round(0.6*samplingrate);
+
+
+% Design bandpass filter (0.5–15 Hz)
+[b,a] = butter(4, [0.5 15]/(samplingrate/2), 'bandpass');
+
+% Use raw EEG data
+raw_data = t2.data;
+
+pz_index = 13;   % example electrode, we can choose many but a paper mentions Pz/13 is strongest
+
+time = (0:epoch_length-1) / samplingrate * 1000;
+
+% lets us create these arrays, channels, samples, and number of trials we
+target_epochs = zeros(32, epoch_length, length(target_indices));
+nontarget_epochs = zeros(32, epoch_length, length(nontarget_indices));
+
+% Extracts all target trials
+for i = 1:length(target_indices)
+    firstargetstimulus = target_indices(i);
+    target_epochs(:,:,i) = raw_data(:, firstargetstimulus:firstargetstimulus+epoch_length-1);
+end
+
+% extracts all nontarget trials
+for i = 1:length(nontarget_indices)
+    firstargetstimulus = nontarget_indices(i);
+    nontarget_epochs(:,:,i) = raw_data(:, firstargetstimulus:firstargetstimulus+epoch_length-1);
+end
+
+filtered_target_epochs = zeros(size(target_epochs));
+filtered_nontarget_epochs = zeros(size(nontarget_epochs));
+
+
+for i = 1:length(target_indices)
+    filtered_target_epochs(:,:,i) = filtfilt(b,a,target_epochs(:,:,i)')';
+end
+
+for i = 1:length(nontarget_indices)
+    filtered_nontarget_epochs(:,:,i) = filtfilt(b,a,nontarget_epochs(:,:,i)')';
+end
+
+% Average across trials
+average_target = mean(filtered_target_epochs,3);
+average_nontarget = mean(filtered_nontarget_epochs,3);
+
+
+%% Compiling the dataset
+
+output_file = 'C:\Users\MikeK\Downloads\DatasetMatfiles\S17_Preprocessed_Epoch.mat';
+
+
+numberof_target = size(filtered_target_epochs,3);
+numberof_nontarget = size(filtered_nontarget_epochs,3);
+
+% when calling, 1's are filtered targets and 0's are filtered nontargets
+labelsfortargetandnontarget = [ones(1,numberof_target), zeros(1,numberof_nontarget)];
+
+all_epochs = cat(3, filtered_target_epochs, filtered_nontarget_epochs);
+
+save(output_file, ...
+    'filtered_target_epochs', ...
+    'filtered_nontarget_epochs', ...
+    'all_epochs', ...
+    'labelsfortargetandnontarget', ...
+    'average_target', ...
+    'average_nontarget', ...
+    'samplingrate', ...
+    'time', ...
+    'pz_index');
+
+disp('Preprocessed EEG epochs saved successfully to Downloads folder.');
