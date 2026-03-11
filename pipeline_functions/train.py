@@ -45,7 +45,7 @@ def train(model, num_epochs, train_loader, val_loader, criterion, optimizer, dev
 
         # print training status update after the specified number of epochs pass
         if e % update_every == 0:
-            print(f"Epoch {e}: Training Loss: {train_loss:.4f}, Training Accuracy: {train_acc*100:.2f}%, " + 
+            print(f"Epoch {e+1}: Training Loss: {train_loss:.4f}, Training Accuracy: {train_acc*100:.2f}%, " + 
                   f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_acc*100:.2f}%")
     
     return training_history
@@ -80,10 +80,11 @@ def train_epoch(model, train_loader, criterion, optimizer, device, batch_first =
         x, y = x.to(device), y.to(device)
 
         # forward pass
-        spk_rec, _ = model(x, batch_first=batch_first)
+        spk_rec, mem_rec = model(x, batch_first=batch_first)
 
         # loss calculation
-        loss = criterion(spk_rec, y)
+        mem_mean = mem_rec.mean(dim=0)
+        loss = criterion(mem_mean, y)
 
         # calculating gradients and weights
         optimizer.zero_grad()
@@ -125,6 +126,11 @@ def validate_snn(model, val_loader, criterion, device, batch_first=False):
     num_correct = 0
     total = 0
 
+    # for spike output monitoring
+    total_output_spikes = 0
+    total_mem2_max = 0
+    total_steps = 0
+
     with torch.no_grad():
         for x, y in val_loader:
             x, y = x.to(device), y.to(device)
@@ -134,10 +140,17 @@ def validate_snn(model, val_loader, criterion, device, batch_first=False):
                 model.reset()
 
             # forward pass
-            spk_rec, _ = model(x, batch_first=batch_first)
+            spk_rec, mem_rec = model(x, batch_first=batch_first)
+
+            # Output spikes
+            out_spk_rate = spk_rec.mean().item()
+            total_output_spikes += out_spk_rate
+            total_mem2_max += mem_rec.max().item()
+            total_steps += 1
 
             # Compute loss on spike trains
-            loss = criterion(spk_rec, y)
+            mem_mean = mem_rec.mean(dim=0)
+            loss = criterion(mem_mean, y)
 
             # adding batch loss to total loss
             total_loss += loss.item() * spk_rec.size(1)
@@ -148,6 +161,10 @@ def validate_snn(model, val_loader, criterion, device, batch_first=False):
             # adding to total number in training set
             total += spk_rec.size(1)
 
+    # prints avg spike rate and maximum membrane potential to help with tuning thresholds
+    print(f"Avg output spike rate: {total_output_spikes/total_steps:.4f}")
+    print(f"Avg output membrane max: {total_mem2_max/total_steps:.4f}")
+    
     avg_loss = total_loss / total
     acc = num_correct / total
     return avg_loss, acc
@@ -170,6 +187,7 @@ def prepare_training_data(X, y, batch_size, balanced = True):
     """
     # change into pytorch tensors
     X_tensor = torch.from_numpy(X)
+    X_tensor = X_tensor.clone().detach().float()
     y_tensor = torch.from_numpy(y)
 
     # load into a tensor dataset
@@ -190,15 +208,21 @@ def prepare_training_data(X, y, batch_size, balanced = True):
 
     train_dataset, val_dataset, test_dataset = random_split(full_dataset, lengths)
 
-    sampler = None
+    # creating a sampler out P300 and non-P300 samples for training set so they are closer to 50/50
+    train_labels = torch.tensor([full_dataset[i][1] for i in train_dataset.indices])
+    class_counts = torch.bincount(train_labels)
+    print("Training Class Counts: ", class_counts)
+    # Calculate inverse frequencies
+    class_weights = 1.0 / class_counts
+
+    # Normalize weights (optional, but often helpful)
+    class_weights = class_weights / class_weights.sum() * len(class_counts) 
+
+    print("Training Class Weights:", class_weights)
+    
+    train_loader=None
+
     if balanced:
-        # creating a sampler out P300 and non-P300 samples for training set so they are closer to 50/50
-        train_labels = torch.tensor([full_dataset[i][1] for i in train_dataset.indices])
-        class_counts = torch.bincount(train_labels)
-        print("Training Class Counts: ", class_counts)
-        # Calculate inverse frequencies
-        class_weights = 1.0 / class_counts
-        print("Training Class Weights:", class_weights)
         # Assign weight to each sample based on its class
         sample_weights = class_weights[train_labels]
 
@@ -207,9 +231,11 @@ def prepare_training_data(X, y, batch_size, balanced = True):
             len(sample_weights), 
             replacement=True # Allows oversampling of minority classes
         )
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    return train_loader, val_loader, test_loader
+    return train_loader, val_loader, test_loader, class_weights
